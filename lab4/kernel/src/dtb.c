@@ -145,10 +145,12 @@ void dtb_find_and_store_reserved_memory()
     {
         unsigned long long start = uint64_endian_big2lttle(reverse_entry->address);
         unsigned long long end = uint64_endian_big2lttle(reverse_entry->size) + start;
+        uart_sendline("[Memory reserved] for dtb reverse entry.\n");
         memory_reserve(start, end);
         reverse_entry++;
     }
-
+ 
     // reserve device tree itself
+    uart_sendline("[Memory Reserved] for dtb itself.\n");
     memory_reserve((unsigned long long)dtb_ptr, (unsigned long long)dtb_ptr + uint32_endian_big2lttle(header->totalsize));
 }

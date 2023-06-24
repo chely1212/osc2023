@@ -86,11 +86,16 @@ void init_allocator()
     4. Your simple allocator (startup allocator) (Stack + Heap)
     5. Initramfs
     */
-    uart_sendline("\r\n* advance 3: Startup Allocation *\r\n");
+    uart_sendline("\r\n* Advance 3: Startup Allocation *\r\n Before reserve memory: \n");
+    dump_page_info();
+    uart_sendline("========start to reserve memory==========\n");
     dtb_find_and_store_reserved_memory(); // 1&2 find reserve memory in dtb
-    uart_sendline("buddy system: usable memory region: 0x%x ~ 0x%x\n", BUDDY_MEMORY_BASE, BUDDY_MEMORY_BASE + BUDDY_MEMORY_PAGE_COUNT * PAGESIZE);
+    //uart_sendline("buddy system: usable memory region: 0x%x ~ 0x%x\n", BUDDY_MEMORY_BASE, BUDDY_MEMORY_BASE + BUDDY_MEMORY_PAGE_COUNT * PAGESIZE);
+    uart_sendline("[Memory reserved] for kernel.\n");
     memory_reserve((unsigned long long)&_start, (unsigned long long)&_end); // kernel
+    uart_sendline("[Memory reserved] for simple allocator.\n");
     memory_reserve((unsigned long long)&_heap_top, (unsigned long long)&_stack_top);  // heap & stack -> simple allocator
+    uart_sendline("[Memory reserved] for initramfs. \n");
     memory_reserve((unsigned long long)CPIO_DEFAULT_START, (unsigned long long)CPIO_DEFAULT_END); //initramfs
 }
 
@@ -366,11 +371,11 @@ void memory_reserve(unsigned long long start, unsigned long long end)
             {
                 ((frame_t *)pos)->used = FRAME_ALLOCATED;
                 uart_sendline("    [!] Reserved page in 0x%x - 0x%x\n", pagestart, pageend);
-                uart_sendline("        Before\n");
+                uart_sendline("        [Before]\n");
                 dump_page_info();
                 list_del_entry(pos);
                 uart_sendline("        Remove usable block for reserved memory: order %d\r\n", order);
-                uart_sendline("        After\n");
+                uart_sendline("        [After]\n");
                 dump_page_info();
             }
             //situation2: no intersection
