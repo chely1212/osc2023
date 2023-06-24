@@ -1,4 +1,4 @@
-#include "string.h"
+#include "u_string.h"
 #include <stddef.h>
 
 unsigned int vsprintf(char *dst, char* fmt, __builtin_va_list args)

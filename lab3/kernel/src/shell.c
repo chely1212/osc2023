@@ -1,45 +1,34 @@
 #include <stddef.h>
-#include "uart.h"
-#include "utils.h"
+#include "shell.h"
+#include "uart1.h"
 #include "mbox.h"
+#include "power.h"
 #include "cpio.h"
-#include "malloc.h"
-#include "string.h"
+#include "u_string.h"
+#include "dtb.h"
+#include "heap.h"
+#include "timer.h"
 
-#define CMD_MAX_LEN 0x100
-#define MSG_MAX_LEN 0x100
+#define CLI_MAX_CMD 11
+#define USTACK_SIZE 0x10000
 
-typedef struct CLI_CMDS
+extern char* dtb_ptr;
+void* CPIO_DEFAULT_PLACE;
+
+struct CLI_CMDS cmd_list[CLI_MAX_CMD]=
 {
-    char command[CMD_MAX_LEN];
-    char help[MSG_MAX_LEN];
-} CLI_CMDS;
-
-void shell_init(){
-	uart_init();
-	uart_send_string("Hello! Welcome to Chely's system.\n That's demo Lab3.\n");
-	uart_flush();
-}
-
-
-void shell_input(char *buffer){
-	uart_send_string("\r> ");
-	buffer[0] = '\0';
-	int end =0; 
-	char c;
-	char s[2];
-
-	while((c =uart_recv()) != '\n') {
-		s[0]=c;
-		s[1]='\0';
-		uart_send_string(s);
-		buffer[end] = c;
-		end ++;
-		buffer[end]= '\0';
-	}
-	uart_send_string("\n");
-	
-}
+    {.command="cat", .help="concatenate files and print on the standard output"},
+    {.command="dtb", .help="show device tree"},
+    {.command="exec", .help="execute a command, replacing current image with a new image"},
+    {.command="hello", .help="print Hello World!"},
+    {.command="help", .help="print all available commands"},
+    {.command="kmalloc", .help="simple allocator in heap session"},
+    {.command="info", .help="get device information via mailbox"},
+    {.command="ls", .help="list directory contents"},
+    {.command="setTimeout", .help="setTimeout [MESSAGE] [SECONDS]"},
+    {.command="set2s", .help="set core timer interrupt every 2 second"},
+    {.command="reboot", .help="reboot the device"}
+};
 
 void cli_cmd_clear(char* buffer, int length)
 {
@@ -62,95 +51,226 @@ void cli_cmd_read(char* buffer)
     }
 }
 
+void cli_cmd_exec(char* buffer)
+{
+    if (!buffer) return;
 
-void shell_command(char *buffer){
-	if(buffer[0] =='\0') return;
-	//support argv
-	char* cmd = buffer;
-	//char* argv;
-	char* argv = str_SepbySpace(buffer);
+    char* cmd = buffer;
+    char* argvs = str_SepbySpace(buffer);
 
-	//for sub cmd:
-	char sub_cmd3[4];
-	for (int i=0; i<3;i++) sub_cmd3[i] = cmd[i];
-	sub_cmd3[3] = '\0';
+    if (strcmp(cmd, "cat") == 0) {
+        do_cmd_cat(argvs);
+    } else if (strcmp(cmd, "dtb") == 0){
+        do_cmd_dtb();
+    } else if (strcmp(cmd, "exec") == 0){
+        do_cmd_exec(argvs);
+    } else if (strcmp(cmd, "hello") == 0) {
+        do_cmd_hello();
+    } else if (strcmp(cmd, "help") == 0) {
+        do_cmd_help();
+    } else if (strcmp(cmd, "info") == 0) {
+        do_cmd_info();
+    } else if (strcmp(cmd, "kmalloc") == 0) {
+        do_cmd_kmalloc();
+    } else if (strcmp(cmd, "ls") == 0) {
+        do_cmd_ls(argvs);
+    } else if (strcmp(cmd, "setTimeout") == 0) {
+        char* sec = str_SepbySpace(argvs);
+        do_cmd_setTimeout(argvs, sec);
+    } else if (strcmp(cmd, "set2s") == 0) {
+        do_cmd_set2s();
+    } else if (strcmp(cmd, "reboot") == 0) {
+        do_cmd_reboot();
+    }
+}
 
-	if (str_compare(cmd, "hello")){
-		uart_send_string("Hello World! \n");
-	}
-	else if (str_compare(cmd, "help")){
-		uart_send_string("Command|Description\n");
-		uart_send_string("-------|-----------------------------\n");
-		uart_send_string("hello  |print Hello World!\n");
-		uart_send_string("mailbox|print hardware information.\n");
-		uart_send_string("help   |print all available commands\n");
-		uart_send_string("exec   |execute a user program\n");
-		uart_send_string("timer2s|enable core timer's interrupt\n");
-		uart_send_string("setTimeout|set timeout [message] [seconds].\n");
-		uart_send_string("reboot |reboot raspi\n");
-	}
-	else if (str_compare(cmd, "reboot")){
-		uart_send_string("rebooting ............zzzzzzzzzz\n");
-		reset(3000);
-		while(1); //prevent sth error.
-	}
-	else if (str_compare(cmd, "mailbox")){
-		mbox_get_board_revision();
-		mbox_get_arm_memory();
+void cli_print_banner()
+{
+    uart_puts("\r\n");
+    uart_puts("=======================================\r\n");
+    uart_puts("  Welcome to NYCU-OSC 2023 Lab3 Shell  \r\n");
+    uart_puts("=======================================\r\n");
+}
 
-	}
-	//implement ls 
-	else if (str_compare(cmd, "ls")){
-		list();
-	}
-	//implement cat file
-	else if (str_compare(cmd, "cat")){
-		char *cat_file_name = argv;
-		while(cat_file_name[0] == ' ') cat_file_name++;
-		show_cat_file(cat_file_name);
-	}
-	else if (str_compare(cmd, "exec")){
-		char *filename = argv;
-		exec_app(filename);
-	}
-	else if (str_compare(cmd, "timer2s")){
-		timer_2s();
-	}
-	else if (str_compare(cmd, "setTimeout")){
-		char* sec = str_SepbySpace(argv);
-		add_timer(uart_sendline, atoi(sec), argv);
-	}
-	else{
-		uart_send_string(cmd);
-		uart_send_string(": Command Not found!\n");
-	}
+void do_cmd_cat(char* filepath)
+{
+    char* c_filepath;
+    char* c_filedata;
+    unsigned int c_filesize;
+    struct cpio_newc_header *header_ptr = CPIO_DEFAULT_PLACE;
+
+    while(header_ptr!=0)
+    {
+        int error = cpio_newc_parse_header(header_ptr, &c_filepath, &c_filesize, &c_filedata, &header_ptr);
+        //if parse header error
+        if(error)
+        {
+            uart_puts("cpio parse error");
+            break;
+        }
+
+        if(strcmp(c_filepath, filepath)==0)
+        {
+            uart_puts("%s", c_filedata);
+            break;
+        }
+
+        //if this is TRAILER!!! (last of file)
+        if(header_ptr==0) uart_puts("cat: %s: No such file or directory\n", filepath);
+    }
+}
+
+void do_cmd_dtb()
+{
+    traverse_device_tree(dtb_ptr, dtb_callback_show_tree);
+}
+
+void do_cmd_help()
+{
+    for(int i = 0; i < CLI_MAX_CMD; i++)
+    {
+        uart_puts(cmd_list[i].command);
+        uart_puts("\t\t\t: ");
+        uart_puts(cmd_list[i].help);
+        uart_puts("\r\n");
+    }
+}
+
+void do_cmd_exec(char* filepath)
+{
+    char* c_filepath;
+    char* c_filedata;
+    unsigned int c_filesize;
+    struct cpio_newc_header *header_ptr = CPIO_DEFAULT_PLACE;
+
+    while(header_ptr!=0)
+    {
+        int error = cpio_newc_parse_header(header_ptr, &c_filepath, &c_filesize, &c_filedata, &header_ptr);
+        //if parse header error
+        if(error)
+        {
+            uart_puts("cpio parse error");
+            break;
+        }
+
+        if(strcmp(c_filepath, filepath)==0)
+        {
+            //exec c_filedata
+            char* ustack = kmalloc(USTACK_SIZE);
+            asm("msr elr_el1, %0\n\t"   // elr_el1: Set the address to return to: c_filedata
+                "msr spsr_el1, xzr\n\t" // enable interrupt (PSTATE.DAIF) -> spsr_el1[9:6]=4b0. In Basic#1 sample, EL1 interrupt is disabled.
+                "msr sp_el0, %1\n\t"    // user program stack pointer set to new stack.
+                "eret\n\t"              // Perform exception return. EL1 -> EL0
+                :: "r" (c_filedata),
+                   "r" (ustack+USTACK_SIZE));
+            free(ustack);
+            break;
+        }
+
+        //if this is TRAILER!!! (last of file)
+        if(header_ptr==0) uart_puts("cat: %s: No such file or directory\n", filepath);
+    }
 
 }
 
-
-int str_compare(char *s1, char *s2){
-	int i=0;
-	while(s1[i]){
-		if (s1[i] != s2[i]){
-			return 0;
-			break;
-		}
-		i++;
-	}
-	return 1;
+void do_cmd_hello()
+{
+    uart_puts("Hello World!\r\n");
 }
 
+void do_cmd_info()
+{
+    // print hw revision
+    pt[0] = 8 * 4;
+    pt[1] = MBOX_REQUEST_PROCESS;
+    pt[2] = MBOX_TAG_GET_BOARD_REVISION;
+    pt[3] = 4;
+    pt[4] = MBOX_TAG_REQUEST_CODE;
+    pt[5] = 0;
+    pt[6] = 0;
+    pt[7] = MBOX_TAG_LAST_BYTE;
 
-int str_cmp(char *s1, char *s2){
-  int i = 0;
-  if (s1[0] == '\0' && s2[0] == '\0') return 1;
-  while(s1[i]){
-    if (s1[i] != s2[i]) return 0;
-    i++;
-  }
+    if (mbox_call(MBOX_TAGS_ARM_TO_VC, (unsigned int)((unsigned long)&pt)) ) {
+        uart_puts("Hardware Revision\t: ");
+        uart_2hex(pt[6]);
+        uart_2hex(pt[5]);
+        uart_puts("\r\n");
+    }
+    // print arm memory
+    pt[0] = 8 * 4;
+    pt[1] = MBOX_REQUEST_PROCESS;
+    pt[2] = MBOX_TAG_GET_ARM_MEMORY;
+    pt[3] = 8;
+    pt[4] = MBOX_TAG_REQUEST_CODE;
+    pt[5] = 0;
+    pt[6] = 0;
+    pt[7] = MBOX_TAG_LAST_BYTE;
 
-  if (s2[i] == '\0') return 1;
-  return 0;
+    if (mbox_call(MBOX_TAGS_ARM_TO_VC, (unsigned int)((unsigned long)&pt)) ) {
+        uart_puts("ARM Memory Base Address\t: ");
+        uart_2hex(pt[5]);
+        uart_puts("\r\n");
+        uart_puts("ARM Memory Size\t\t: ");
+        uart_2hex(pt[6]);
+        uart_puts("\r\n");
+    }
 }
 
+void do_cmd_kmalloc()
+{
+    //test malloc
+    char* test1 = kmalloc(0x18);
+    memcpy(test1,"test malloc1",sizeof("test malloc1"));
+    uart_puts("%s\n",test1);
+
+    char* test2 = kmalloc(0x20);
+    memcpy(test2,"test malloc2",sizeof("test malloc2"));
+    uart_puts("%s\n",test2);
+
+    char* test3 = kmalloc(0x28);
+    memcpy(test3,"test malloc3",sizeof("test malloc3"));
+    uart_puts("%s\n",test3);
+}
+
+void do_cmd_ls(char* workdir)
+{
+    char* c_filepath;
+    char* c_filedata;
+    unsigned int c_filesize;
+    struct cpio_newc_header *header_ptr = CPIO_DEFAULT_PLACE;
+
+    while(header_ptr!=0)
+    {
+        int error = cpio_newc_parse_header(header_ptr, &c_filepath, &c_filesize, &c_filedata, &header_ptr);
+        //if parse header error
+        if(error)
+        {
+            uart_puts("cpio parse error");
+            break;
+        }
+
+        //if this is not TRAILER!!! (last of file)
+        if(header_ptr!=0) uart_puts("%s\n", c_filepath);
+    }
+}
+
+void do_cmd_setTimeout(char* msg, char* sec)
+{
+    print_time();
+    add_timer(uart_sendline,atoi(sec),msg);
+}
+
+void do_cmd_set2s()
+{
+    add_timer(timer_2s,2,"timer2s");
+}
+
+void do_cmd_reboot()
+{
+    uart_puts("Reboot in 5 seconds ...\r\n\r\n");
+    volatile unsigned int* rst_addr = (unsigned int*)PM_RSTC;
+    *rst_addr = PM_PASSWORD | 0x20;
+    volatile unsigned int* wdg_addr = (unsigned int*)PM_WDOG;
+    *wdg_addr = PM_PASSWORD | 5;
+}
 

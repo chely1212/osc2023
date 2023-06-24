@@ -1,64 +1,23 @@
-#include "peripherals/mbox.h"
-#include "uart.h"
+#include "bcm2837/rpi_mbox.h"
+#include "mbox.h"
 
-int mbox_call(unsigned int* mbox, unsigned char channel) {
-    unsigned int r = (unsigned int)(((unsigned long)mbox) & (~0xF)) | (channel & 0xF);
-    // wait until full flag unset
-    while (*MBOX_STATUS & MBOX_FULL) {
-    }
-    // write address of message + channel to mailbox
-    *MBOX_WRITE = r;
-    // wait until response
-    while (1) {
-        // wait until empty flag unset
-        while (*MBOX_STATUS & MBOX_EMPTY) {
-        }
-        // is it a response to our msg?
-        if (r == *MBOX_READ) {
-            // check is response success
-            return mbox[1] == MBOX_CODE_BUF_RES_SUCC;
-        }
+/* Aligned to 16-byte boundary while we have 28-bits for VC */
+volatile unsigned int  __attribute__((aligned(16))) pt[64];
+
+int mbox_call( mbox_channel_type channel, unsigned int value )
+{
+    // Add channel to lower 4 bit
+    value &= ~(0xF);
+    value |= channel;
+    while ( (*MBOX_STATUS & BCM_ARM_VC_MS_FULL) != 0 ) {}
+    // Write to Register
+    *MBOX_WRITE = value;
+    while(1) {
+        while ( *MBOX_STATUS & BCM_ARM_VC_MS_EMPTY ) {}
+        // Read from Register
+        if (value == *MBOX_READ)
+            return pt[1] == MBOX_REQUEST_SUCCEED;
     }
     return 0;
 }
 
-
-void mbox_get_board_revision() {
-    unsigned int __attribute__((aligned(16))) mbox[7]; 
-
-    mbox[0] = 7 * 4;  // buffer size in bytes (7*32/8)
-    mbox[1] = MBOX_CODE_BUF_REQ;
-    // tags begin
-    mbox[2] = MBOX_TAG_GET_BOARD_REVISION;  // tag identifier
-    mbox[3] = 4;                            // maximum of request and response value buffer's length.
-    mbox[4] = MBOX_CODE_TAG_REQ;            // tag code
-    mbox[5] = 0;                            // value buffer
-    mbox[6] = 0x0;                          // end tag
-    // tags end
-    mbox_call(mbox, 8); //use channel 8
-    uart_send_string("Board Revision: ");
-    uart_hex(mbox[5]);
-    uart_send_string("\n");
-}
-
-
-void mbox_get_arm_memory() {
-    unsigned int __attribute__((aligned(16))) mbox[8];
-    mbox[0] = 8 * 4;  // buffer size in bytes
-    mbox[1] = MBOX_CODE_BUF_REQ;
-    // tags begin
-    mbox[2] = MBOX_TAG_GET_ARM_MEMORY;  // tag identifier
-    mbox[3] = 8;                       // maximum of request and response value buffer's length.
-    mbox[4] = MBOX_CODE_TAG_REQ;       // tag code
-    mbox[5] = 0;                       // base address
-    mbox[6] = 0;                       // size in bytes
-    mbox[7] = 0x0;                     // end tag
-    // tags end
-    mbox_call(mbox, 8);
-    uart_send_string("ARM core base address: 0x");
-    uart_hex(mbox[5]);
-    uart_send_string(";SIZE:");
-    uart_hex(mbox[6]);
-    uart_send_string("\n");
-
-}

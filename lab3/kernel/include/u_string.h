@@ -1,5 +1,5 @@
-#ifndef _STRING_H_
-#define _STRING_H_
+#ifndef _U_STRING_H_
+#define _U_STRING_H_
 
 #define VSPRINT_MAX_BUF_SIZE 0x100
 
@@ -15,4 +15,4 @@ char*              strcpy(char *dest, const char *src);
 char* str_SepbySpace(char* head);
 int   atoi(char* str);
 
-#endif /* _STRING_H_ */
+#endif /* _U_STRING_H_ */

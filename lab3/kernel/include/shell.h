@@ -14,13 +14,18 @@ int  cli_cmd_strcmp(const char*, const char*);
 void cli_cmd_clear(char*, int);
 void cli_cmd_read(char*);
 void cli_cmd_exec(char*);
-void shell_init(); //init uart, shell.
-void shell_input(); //handler console input
-void cli_cmd_clear();
-void shell_command(); //handle 'command'
-void str_compare();
-int str_cmp();
-int strcmp();
-unsigned long long strlen();
+void cli_print_banner();
 
-#endif
+void do_cmd_cat(char*);
+void do_cmd_dtb();
+void do_cmd_exec(char*);
+void do_cmd_help();
+void do_cmd_hello();
+void do_cmd_info();
+void do_cmd_kmalloc();
+void do_cmd_ls(char*);
+void do_cmd_setTimeout(char* msg, char* sec);
+void do_cmd_set2sAlert();
+void do_cmd_reboot();
+
+#endif /* _SHELL_H_ */
