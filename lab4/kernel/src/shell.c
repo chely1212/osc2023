@@ -262,16 +262,7 @@ void do_cmd_ls(char* workdir)
 
 void do_cmd_memory_tester()
 {
-/*
-    char *p1 = kmalloc(0x820);
-    char *p2 = kmalloc(0x900);
-    char *p3 = kmalloc(0x2000);
-    char *p4 = kmalloc(0x3900);
-    kfree(p3);
-    kfree(p4);
-    kfree(p1);
-    kfree(p2);
-*/
+
     char *a = kmalloc(0x10);
     char *b = kmalloc(0x100);
     char *c = kmalloc(0x1000);
@@ -286,10 +277,6 @@ void do_cmd_memory_tester()
     char *bb = kmalloc(64);
     c = kmalloc(128);
     char *cc = kmalloc(129);
-    char *d = kmalloc(256);
-    char *dd = kmalloc(256);
-    char *e = kmalloc(512);
-    char *ee = kmalloc(999);
 
     char *f = kmalloc(0x2000);
     char *ff = kmalloc(0x2000);
@@ -304,11 +291,6 @@ void do_cmd_memory_tester()
     kfree(bb);
     kfree(c);
     kfree(cc);
-    kfree(dd);
-    kfree(d);
-    kfree(e);
-    kfree(ee);
-
     kfree(f);
     kfree(ff);
     kfree(g);

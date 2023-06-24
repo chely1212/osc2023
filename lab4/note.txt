@@ -1,0 +1,3 @@
+change heap.c -> memory.c
+implement memory.c
+note memory allocation in link.ld
